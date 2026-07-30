@@ -1,0 +1,16 @@
+fastapi
+uvicorn[standard]
+sqlalchemy
+psycopg2-binary
+redis
+kafka-python
+qdrant-client
+neo4j
+sentence-transformers
+rank-bm25
+pypdf
+python-multipart
+pillow
+faster-whisper
+gitpython
+requests

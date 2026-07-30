@@ -1,0 +1,46 @@
+version: "3.9"
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: kp
+      POSTGRES_PASSWORD: kp
+      POSTGRES_DB: knowledge
+    ports: ["5432:5432"]
+    volumes: ["pg_data:/var/lib/postgresql/data"]
+
+  redis:
+    image: redis:7
+    ports: ["6379:6379"]
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    ports: ["6333:6333"]
+    volumes: ["qdrant_data:/qdrant/storage"]
+
+  neo4j:
+    image: neo4j:5-community
+    environment:
+      NEO4J_AUTH: neo4j/password123
+    ports: ["7474:7474", "7687:7687"]
+    volumes: ["neo4j_data:/data"]
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    depends_on: [zookeeper]
+    ports: ["9092:9092"]
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+
+volumes:
+  pg_data:
+  qdrant_data:
+  neo4j_data:

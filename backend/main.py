@@ -1,7 +1,9 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from routers import ingest
 
 app = FastAPI(title="Knowledge Intelligence Platform")
+app.include_router(ingest.router)
 
 app.add_middleware(
     CORSMiddleware,

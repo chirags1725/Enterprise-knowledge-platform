@@ -14,3 +14,10 @@ pillow
 faster-whisper
 gitpython
 requests
+numpy
+torch
+openpyxl
+pandas
+python-docx
+python-pptx
+pytesseract

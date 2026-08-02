@@ -8,6 +8,14 @@ import re
 reranker = CrossEncoder(RERANK_MODEL)
 es = get_es_client()
 
+RECALL_LIMIT = 100
+
+# RRF smoothing constant.
+RRF_K = 60
+
+VECTOR_WEIGHT = 1.0
+BM25_WEIGHT = 1.0
+
 def vector_search(query, limit=20):
     vec = model.encode(query).tolist()
     hits = qdrant.query_points(COLLECTION, query=vec, limit=limit).points
@@ -20,9 +28,6 @@ def vector_search(query, limit=20):
     }
     for h in hits
     ]
-
-def tokenize(text):
-    return re.findall(r"\b\w+\b", text.lower())
 
 def bm25_search(query, limit=30):
     response = es.search(
@@ -51,41 +56,47 @@ def bm25_search(query, limit=30):
     
     return results
 
-def _merge_candidates(vector_hits, bm25_hits):
-    merged = {}
-    for hit in vector_hits + bm25_hits:
-        key = (hit['doc_id'], hit.get('chunk_index'))
-        if key not in merged:
-            merged[key] = {
-                "text": hit["text"],
-                "doc_id": hit["doc_id"],
-                "chunk_index": hit.get("chunk_index"),
-                "vector_score": hit.get("vector_score", 0.0),
-                "bm25_score": hit.get("bm25_score", 0.0),
-            }
-        else:
-            existing = merged[key]
-            existing["vector_score"] = max(
-                existing["vector_score"], hit.get("vector_score", 0.0)
-            )
-            existing["bm25_score"] = max(
-                existing["bm25_score"], hit.get("bm25_score", 0.0)
-            )
-    return list(merged.values())
+def reciprocal_rank_fusion(vector_hits, bm25_hits, k=RRF_K):
+    fused = {}
 
-def hybrid_search(query, top_k=5, candidate_limit=30):
+    def add(hits, weight, score_field):
+        for rank, hit in enumerate(hits, start=1):
+            key = (hit["doc_id"], hit.get("chunk_index"))
+            contribution = weight * (1.0 / (k + rank))
+            if key not in fused:
+                fused[key] = {
+                    "text": hit["text"],
+                    "doc_id": hit["doc_id"],
+                    "chunk_index": hit.get("chunk_index"),
+                    "vector_score": 0.0,
+                    "bm25_score": 0.0,
+                    "rrf_score": 0.0,
+                }
+            fused[key][score_field] = hit.get(score_field, 0.0)
+            fused[key]["rrf_score"] += contribution
 
-    vector_hits = vector_search(query, limit=candidate_limit)
-    bm25_hits = bm25_search(query, limit=candidate_limit)
+    add(vector_hits, VECTOR_WEIGHT, "vector_score")
+    add(bm25_hits, BM25_WEIGHT, "bm25_score")
 
-    candidates = _merge_candidates(vector_hits, bm25_hits)
+    return sorted(fused.values(), key=lambda c: c["rrf_score"], reverse=True)
+
+def hybrid_search(query, top_k=5, candidate_limit=30, rerank_pool=50):
+
+    vector_hits = vector_search(query, limit=RECALL_LIMIT)
+    bm25_hits = bm25_search(query, limit=RECALL_LIMIT)
+
+    candidates = reciprocal_rank_fusion(vector_hits, bm25_hits)
     if not candidates:
         return []
 
-    pairs = [(query, c["text"]) for c in candidates]
+    # Rerank only the strongest fused candidates. The cross-encoder is the
+    # most expensive stage, so cap it rather than scoring every fused chunk.
+    pool = candidates[:rerank_pool]
+
+    pairs = [(query, c["text"]) for c in pool]
     rerank_scores = reranker.predict(pairs)
-    for c, r in zip(candidates, rerank_scores):
+    for c, r in zip(pool, rerank_scores):
         c["rerank_score"] = float(r)
 
-    ranked = sorted(candidates, key=lambda x: x["rerank_score"], reverse=True)
+    ranked = sorted(pool, key=lambda c: c["rerank_score"], reverse=True)
     return ranked[:top_k]

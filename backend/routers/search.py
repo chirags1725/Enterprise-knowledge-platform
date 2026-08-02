@@ -1,6 +1,6 @@
-from __future__ import annotations
 from fastapi import APIRouter, Query
 from services.retrieval import hybrid_search
+from typing import Optional, List
 
 router = APIRouter()
 
@@ -8,14 +8,14 @@ router = APIRouter()
 def search(
     q: str,
     top_k: int = 5,
-    department: str | None = Query(default=None),
-    year: int | None = Query(default=None),
-    author: str | None = Query(default=None),
-    language: str | None = Query(default=None),
-    tags: list[str] | None = Query(default=None),
-    access_level: str | None = Query(default=None),
-    file_type: str | None = Query(default=None),
-):    
+    department: Optional[str] = Query(default=None),
+    year: Optional[int] = Query(default=None),
+    author: Optional[str] = Query(default=None),
+    language: Optional[str] = Query(default=None),
+    tags: Optional[List[str]] = Query(default=None),
+    access_level: Optional[str] = Query(default=None),
+    file_type: Optional[str] = Query(default=None),
+):
     filters = {
         "department": department,
         "year": year,

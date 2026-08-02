@@ -85,7 +85,7 @@ def build_es_filter(filters):
 
 def vector_search(query, limit=20, filters=None):
     vec = model.encode(query).tolist()
-    hits = qdrant.query_points(COLLECTION, query=vec, limit=limit, filter=build_filter(filters)).points
+    hits = qdrant.query_points(COLLECTION, query=vec, limit=limit, query_filter=build_filter(filters)).points
     return [
     {
         "text": h.payload["text"],

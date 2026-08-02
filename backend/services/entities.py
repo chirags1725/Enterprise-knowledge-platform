@@ -1,11 +1,11 @@
-from __future__ import annotations
-
 import spacy
 from neo4j import GraphDatabase
 from config import NEO4J_URI, NEO4J_AUTH
 
 import re
 import uuid
+
+from typing import Optional
 
 nlp = spacy.load("en_core_web_sm")
 driver =   GraphDatabase.driver(NEO4J_URI, auth=NEO4J_AUTH)
@@ -81,7 +81,7 @@ def write_graph(
     doc_id: str,
     filename: str,
     text: str,
-    metadata: dict | None = None,
+    metadata: Optional[dict] = None,
 ) -> None:
 
     metadata = metadata or {}
@@ -257,7 +257,7 @@ def process_document(
     doc_id: str,
     filename: str,
     text: str,
-    metadata: dict | None = None,
+    metadata: Optional[dict] = None,
 ) -> int:
     write_graph(doc_id, filename, text, metadata)
     return len(extract_entities(text))

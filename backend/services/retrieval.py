@@ -88,9 +88,7 @@ def hybrid_search(query, top_k=5, candidate_limit=30, rerank_pool=50):
     candidates = reciprocal_rank_fusion(vector_hits, bm25_hits)
     if not candidates:
         return []
-
-    # Rerank only the strongest fused candidates. The cross-encoder is the
-    # most expensive stage, so cap it rather than scoring every fused chunk.
+    
     pool = candidates[:rerank_pool]
 
     pairs = [(query, c["text"]) for c in pool]

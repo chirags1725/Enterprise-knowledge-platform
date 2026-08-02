@@ -20,7 +20,7 @@ qdrant = QdrantClient(url=QDRANT_URL)
 COLLECTION = "documents"
 
 
-CHUNK_SIZE = 1000        # characters, not words
+CHUNK_SIZE = 2000        # characters, not words
 CHUNK_OVERLAP = 150      # characters of overlap to preserve context across chunks
 
 _TEXT_SEPARATORS = [
@@ -189,6 +189,7 @@ def store_document(
         The number of chunks stored.
     """
     metadata = metadata or {}
+    ensure_collection()
 
     chunks = chunk_text(text, source_ext=source_ext)
     if not chunks:

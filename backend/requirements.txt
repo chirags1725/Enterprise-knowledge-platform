@@ -23,3 +23,5 @@ python-pptx
 pytesseract
 spacy
 tf-keras
+elasticsearch>=8.14.0
+langchain_text_splitters

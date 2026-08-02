@@ -9,3 +9,5 @@ KAFKA_BROKER = "localhost:9092"
 OLLAMA_URL = "http://localhost:11434"
 EMBED_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 RERANK_MODEL = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+ES_URL = os.getenv("ES_URL", "http://localhost:9200")
+ES_INDEX = os.getenv("ES_INDEX", "chunks")

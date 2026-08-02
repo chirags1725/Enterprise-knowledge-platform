@@ -1,8 +1,12 @@
+import os
+
 from sentence_transformers import SentenceTransformer
 from qdrant_client import QdrantClient
-from qdrant_client.models import Distance, VectorParams, PointStruct
+from qdrant_client.models import Distance, VectorParams, PointStruct, PayloadSchemaType
 from config import QDRANT_URL, EMBED_MODEL
 import uuid
+
+from datetime import datetime
 
 model = SentenceTransformer(EMBED_MODEL)
 qdrant = QdrantClient(url=QDRANT_URL)
@@ -13,6 +17,23 @@ def ensure_collection():
         qdrant.create_collection(
             COLLECTION,
             vectors_config=VectorParams(size=384, distance=Distance.COSINE)
+        )
+        qdrant.create_payload_index(
+            collection_name=COLLECTION,
+            field_name="doc_id",
+            field_schema=PayloadSchemaType.KEYWORD,
+        )
+
+        qdrant.create_payload_index(
+            collection_name=COLLECTION,
+            field_name="filename",
+            field_schema=PayloadSchemaType.KEYWORD,
+        )
+
+        qdrant.create_payload_index(
+            collection_name=COLLECTION,
+            field_name="file_type",
+            field_schema=PayloadSchemaType.KEYWORD,
         )
 
 def chunk_text(text, size=500, overlap=50):
@@ -49,6 +70,10 @@ def embed_and_store(doc_id, filename, text):
 
     print("VECTORS CREATED")
 
+    file_type = os.path.splitext(filename)[1].replace(".", "").lower()
+
+    created_at = datetime.utcnow().isoformat()
+
     points = [
         PointStruct(
             id=str(uuid.uuid4()),
@@ -56,10 +81,13 @@ def embed_and_store(doc_id, filename, text):
             payload={
                 "doc_id": doc_id,
                 "filename": filename,
-                "text": chunk
-            }
+                "chunk_id": idx,
+                "file_type": file_type,
+                "created_at": created_at,
+                "text": chunk,
+            },
         )
-        for chunk, vec in zip(chunks, vectors)
+        for idx, (chunk, vec) in enumerate(zip(chunks, vectors))
     ]
 
     print("POINTS:", len(points))

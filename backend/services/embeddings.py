@@ -2,9 +2,9 @@ import os
 import re
 
 from sentence_transformers import SentenceTransformer
-from qdrant_client import QdrantClient
+from db.qdrant import get_qdrant_client
 from qdrant_client.models import Distance, VectorParams, PointStruct, PayloadSchemaType
-from config import QDRANT_URL, EMBED_MODEL
+from config import EMBED_MODEL
 
 from langchain_text_splitters import (
     RecursiveCharacterTextSplitter,
@@ -16,7 +16,7 @@ from typing import Optional
 from datetime import datetime
 
 model = SentenceTransformer(EMBED_MODEL)
-qdrant = QdrantClient(url=QDRANT_URL)
+qdrant = get_qdrant_client()
 COLLECTION = "documents"
 
 
@@ -62,30 +62,6 @@ def _code_splitter(language: Language) -> RecursiveCharacterTextSplitter:
         chunk_overlap=CHUNK_OVERLAP,
     )
 
-def ensure_collection():
-    
-    if not qdrant.collection_exists(COLLECTION):
-        qdrant.create_collection(
-            COLLECTION,
-            vectors_config=VectorParams(size=384, distance=Distance.COSINE)
-        )
-        qdrant.create_payload_index(
-            collection_name=COLLECTION,
-            field_name="doc_id",
-            field_schema=PayloadSchemaType.KEYWORD,
-        )
-
-        qdrant.create_payload_index(
-            collection_name=COLLECTION,
-            field_name="filename",
-            field_schema=PayloadSchemaType.KEYWORD,
-        )
-
-        qdrant.create_payload_index(
-            collection_name=COLLECTION,
-            field_name="file_type",
-            field_schema=PayloadSchemaType.KEYWORD,
-        )
 
 def chunk_text(text: str, source_ext: Optional[str] = None) -> list[str]:
     if not text or not text.strip():
@@ -169,10 +145,30 @@ def embed_chunks(chunks):
     vectors = model.encode(chunks, show_progress_bar=False)
     return [v.tolist() for v in vectors]
 
+_METADATA_DEFAULTS = {
+    "department": "unassigned",
+    "year": None,
+    "author": "unknown",
+    "language": "en",
+    "tags": [],
+    "access_level": "internal",   # default to internal, never public
+    "file_type": "text",
+}
+
+
+def _build_metadata(meta) -> dict:
+    """Merge caller-supplied metadata over the defaults."""
+    resolved = dict(_METADATA_DEFAULTS)
+    if meta:
+        for key in _METADATA_DEFAULTS:
+            if key in meta and meta[key] is not None:
+                resolved[key] = meta[key]
+    return resolved
 
 def store_document(
     doc_id,
     text,
+    filename,
     metadata = None,
     source_ext = None,
 ):
@@ -189,13 +185,13 @@ def store_document(
         The number of chunks stored.
     """
     metadata = metadata or {}
-    ensure_collection()
 
     chunks = chunk_text(text, source_ext=source_ext)
     if not chunks:
         return 0
 
     vectors = embed_chunks(chunks)
+    meta = _build_metadata(metadata)
 
     points = [
         PointStruct(
@@ -203,9 +199,16 @@ def store_document(
             vector=vec,
             payload={
                 "doc_id": doc_id,
-                "chunk_id": idx,
+                "filename": filename,
+                "chunk_index": idx,
                 "text": chunk,
-                **metadata
+                "department": meta["department"],
+                "year": meta["year"],
+                "author": meta["author"],
+                "language": meta["language"],
+                "tags": meta["tags"],
+                "access_level": meta["access_level"],
+                "file_type": meta["file_type"],
             },
         )
         for idx, (chunk, vec) in enumerate(zip(chunks, vectors))

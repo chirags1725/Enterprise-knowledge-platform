@@ -8,6 +8,7 @@ router = APIRouter()
 def search(
     q: str,
     top_k: int = 5,
+    use_graph: bool = Query(default=True),
     department: Optional[str] = Query(default=None),
     year: Optional[int] = Query(default=None),
     author: Optional[str] = Query(default=None),
@@ -27,5 +28,5 @@ def search(
     }
     filters = {k: v for k, v in filters.items() if v is not None}
 
-    results = hybrid_search(q, top_k=top_k, filters=filters or None)
-    return {"query": q, "filters": filters, "results": results}
+    results = hybrid_search(q, top_k=top_k, filters=filters or None,use_graph=use_graph)
+    return {"query": q, "filters": filters,"graph": use_graph, "results": results}

@@ -1,3 +1,7 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
 :root {
   --text: #6b6375;
   --text-h: #08060d;
@@ -50,62 +54,52 @@
   }
 }
 
-body {
-  margin: 0;
-}
 
-#root {
-  width: 1126px;
-  max-width: 100%;
-  margin: 0 auto;
-  text-align: center;
-  border-inline: 1px solid var(--border);
-  min-height: 100svh;
-  display: flex;
-  flex-direction: column;
-  box-sizing: border-box;
-}
-
-h1,
-h2 {
-  font-family: var(--heading);
-  font-weight: 500;
-  color: var(--text-h);
-}
-
-h1 {
-  font-size: 56px;
-  letter-spacing: -1.68px;
-  margin: 32px 0;
-  @media (max-width: 1024px) {
-    font-size: 36px;
-    margin: 20px 0;
+@layer base {
+  html {
+    @apply bg-bg text-text;
+  }
+  body {
+    @apply font-sans antialiased;
   }
 }
-h2 {
-  font-size: 24px;
-  line-height: 118%;
-  letter-spacing: -0.24px;
-  margin: 0 0 8px;
-  @media (max-width: 1024px) {
-    font-size: 20px;
+
+@layer components {
+  /* Shared building blocks reused across all three components */
+  .kp-panel {
+    @apply bg-bg-soft border border-line rounded-2xl;
   }
-}
-p {
-  margin: 0;
-}
-
-code,
-.counter {
-  font-family: var(--mono);
-  display: inline-flex;
-  border-radius: 4px;
-  color: var(--text-h);
-}
-
-code {
-  font-size: 15px;
-  line-height: 135%;
-  padding: 4px 8px;
-  background: var(--code-bg);
+  .kp-card {
+    @apply bg-bg-card border border-line rounded-xl transition-colors hover:border-brand/50;
+  }
+  .kp-input {
+    @apply w-full bg-bg-card border border-line rounded-xl px-3 py-2 text-sm
+           text-text placeholder:text-text-faint
+           focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand;
+  }
+  .kp-label {
+    @apply block text-xs font-medium text-text-muted mb-1;
+  }
+  .kp-btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2
+           text-sm font-medium transition-colors disabled:opacity-50
+           disabled:cursor-not-allowed;
+  }
+  .kp-btn-primary {
+    @apply kp-btn bg-brand text-white hover:bg-brand/90;
+  }
+  .kp-btn-ghost {
+    @apply kp-btn bg-bg-card border border-line text-text hover:bg-bg-hover;
+  }
+  .kp-chip {
+    @apply inline-flex items-center gap-1 rounded-full px-2.5 py-0.5
+           text-xs font-medium bg-brand-soft text-brand;
+  }
+  .kp-tab {
+    @apply px-4 py-2 text-sm font-medium rounded-xl transition-colors
+           text-text-muted hover:text-text;
+  }
+  .kp-tab-active {
+    @apply bg-brand text-white hover:text-white;
+  }
 }

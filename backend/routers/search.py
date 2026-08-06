@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Query
-from services.retrieval import hybrid_search
+from services.retrieval import cached_hybrid_search
 from typing import Optional, List
 
 router = APIRouter()
@@ -28,5 +28,5 @@ def search(
     }
     filters = {k: v for k, v in filters.items() if v is not None}
 
-    results = hybrid_search(q, top_k=top_k, filters=filters or None,use_graph=use_graph)
+    results = cached_hybrid_search(q, top_k=top_k, filters=filters or None, use_graph=use_graph)
     return {"query": q, "filters": filters,"graph": use_graph, "results": results}

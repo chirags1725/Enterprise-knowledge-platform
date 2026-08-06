@@ -10,6 +10,7 @@ from config import RERANK_MODEL
 from db.elasticsearch import get_es_client, ES_INDEX
 import re
 from services.entities import driver
+from db import redis as cache
 
 reranker = CrossEncoder(RERANK_MODEL)
 es = get_es_client()
@@ -29,6 +30,18 @@ GRAPH_WEIGHT = 2.0
 
 
 _KEYWORD_FILTERS = ("department", "author", "language", "access_level", "file_type")
+
+
+def encode_query(query: str) -> list[float]:
+    key = cache.embedding_key(query)
+
+    cached = cache.get_json(key)
+    if cached is not None:
+        return cached
+
+    vector = model.encode(query).tolist()
+    cache.set_json(key, vector, ttl=cache.TTL_EMBEDDING)
+    return vector
 
 
 def build_filter(filters):
@@ -90,7 +103,7 @@ def build_es_filter(filters):
     return clauses
 
 def vector_search(query, limit=20, filters=None):
-    vec = model.encode(query).tolist()
+    vec = encode_query(query)
     hits = qdrant.query_points(COLLECTION, query=vec, limit=limit, query_filter=build_filter(filters)).points
     return [
     {
@@ -101,6 +114,41 @@ def vector_search(query, limit=20, filters=None):
     }
     for h in hits if h.payload and "text" in h.payload and "doc_id" in h.payload
     ]
+
+def rerank_pairs(query: str, chunks: list[dict]) -> list[float]:
+    """
+    Score (query, chunk) pairs with the cross-encoder, cached per pair.
+
+    Checks Redis for each pair first. Only the uncached pairs are sent to the
+    cross-encoder in a single batched predict, then their scores are written
+    back. The cross-encoder is the heaviest retrieval stage — caching it cuts
+    the most compute per repeat query.
+    """
+    scores: list[float | None] = [None] * len(chunks)
+    to_score = []          # indices needing a live cross-encoder call
+    to_score_pairs = []
+
+    for i, chunk in enumerate(chunks):
+        key = cache.rerank_key(query, chunk["text"])
+        hit = cache.get_json(key)
+        if hit is not None:
+            scores[i] = float(hit)
+        else:
+            to_score.append(i)
+            to_score_pairs.append((query, chunk["text"]))
+
+    if to_score_pairs:
+        fresh = reranker.predict(to_score_pairs)
+        for idx, score in zip(to_score, fresh):
+            value = float(score)
+            scores[idx] = value
+            cache.set_json(
+                cache.rerank_key(query, chunks[idx]["text"]),
+                value,
+                ttl=cache.TTL_RERANK,
+            )
+
+    return [s if s is not None else 0.0 for s in scores]
 
 def bm25_search(query, limit=30, filters=None):
     print("Document count:")
@@ -416,10 +464,40 @@ def hybrid_search(query, top_k=5, rerank_pool=50, filters=None, use_graph=True):
 
     pool = candidates[:rerank_pool]
 
-    pairs = [(query, c["text"]) for c in pool]
-    rerank_scores = reranker.predict(pairs)
-    for c, r in zip(pool, rerank_scores):
-        c["rerank_score"] = float(r)
+    scores = rerank_pairs(query, pool)
+
+    for c, r in zip(pool, scores):
+        c["rerank_score"] = r
 
     ranked = sorted(pool, key=lambda c: c["rerank_score"], reverse=True)
     return ranked[:top_k]
+
+
+def cached_hybrid_search(
+    query,
+    top_k=5,
+    rerank_pool=50,
+    filters=None,
+    use_graph=True,
+):
+    key = cache.search_key(query, filters, use_graph, top_k)
+
+    cached = cache.get_json(key)
+    if cached is not None:
+        return cached
+
+    results = hybrid_search(
+        query=query,
+        top_k=top_k,
+        rerank_pool=rerank_pool,
+        filters=filters,
+        use_graph=use_graph,
+    )
+
+    cache.set_json(
+        key,
+        results,
+        ttl=cache.TTL_SEARCH,
+    )
+
+    return results

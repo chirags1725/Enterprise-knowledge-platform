@@ -6,6 +6,9 @@ import re
 import uuid
 
 from typing import Optional
+import requests
+from config import OLLAMA_URL
+
 
 nlp = spacy.load("en_core_web_sm")
 driver =   GraphDatabase.driver(NEO4J_URI, auth=NEO4J_AUTH)
@@ -261,3 +264,11 @@ def process_document(
 ) -> int:
     write_graph(doc_id, filename, text, metadata)
     return len(extract_entities(text))
+
+
+def auto_tag(text):
+    prompt = f"Give 5 short topic tags for this text, comma-separated:\n{text[:2000]}"
+    res = requests.post(f"{OLLAMA_URL}/api/generate", json={
+        "model": "mistral", "prompt": prompt, "stream": False
+    })
+    return [t.strip() for t in res.json()["response"].split(",")][:5]

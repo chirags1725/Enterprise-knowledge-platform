@@ -54,7 +54,6 @@
   }
 }
 
-
 @layer base {
   html {
     @apply bg-bg text-text;

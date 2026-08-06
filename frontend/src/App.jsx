@@ -67,7 +67,7 @@ function IngestionPanel() {
       });
       const data = await res.json();
       const job = {
-        jobId: data.job_id,
+        jobId: data.doc_id,
         filename: file.name,
         state: data.state || "queued",
       };

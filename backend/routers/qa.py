@@ -9,7 +9,7 @@ router = APIRouter()
 def ask(q: str):
     chunks = hybrid_search(q, top_k=5)
     context = "\n\n".join(c["text"] for c in chunks)
-    prompt = f"""Answer the question using only the context below.
+    prompt = f"""Answer the question in very detail using only the context below.
 Cite the source filenames you used.
 
 Context:
@@ -19,7 +19,7 @@ Question: {q}
 Answer:"""
 
     res = requests.post(f"{OLLAMA_URL}/api/generate", json={
-        "model": "gpt-oss:120b-cloud",
+        "model": "deepseek-r1:1.5b",
         "prompt": prompt,
         "stream": False
     })

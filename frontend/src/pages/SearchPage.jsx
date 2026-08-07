@@ -126,7 +126,6 @@ function AskAnswer({ data }) {
   >
     {answer}
   </ReactMarkdown>
-  {answer}
 </div>
 </div>
 

@@ -137,6 +137,8 @@ The upload endpoint returns instantly. Workers do the heavy lifting in parallel.
 | Entities      | spaCy (en\_core\_web\_sm)       | Named entity extraction                 |
 | LLM           | Ollama + OpenAI gpt-oss-20b (any other can be used)                | Local Q\&A, zero cost                   |
 | Transcription | Faster-Whisper                  | Audio and video to text                 |
+| OCR | PyTesseract                  | Extracting text from images                 |
+| PDF Extraction | PdfReader                  | Extracting text from PDF                 |
 
 ---
 

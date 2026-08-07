@@ -145,6 +145,79 @@ def embed_chunks(chunks):
     vectors = model.encode(chunks, show_progress_bar=False)
     return [v.tolist() for v in vectors]
 
+
+# Marker the PDF extractor inserts between pages, e.g. "\x0cPAGE:12\x0c".
+# The extractor emits it so the chunker can map a chunk back to its page.
+# Non-paged formats never contain the marker, so page resolves to None.
+_PAGE_MARKER = re.compile(r"\x0cPAGE:(\d+)\x0c")
+
+
+def _build_line_index(text: str) -> list[int]:
+    """
+    Return the character offset at which each line starts.
+
+    Used to convert a chunk's character position into a source line number,
+    so a citation can point at the exact line the chunk begins on.
+    """
+    offsets = [0]
+    for match in re.finditer(r"\n", text):
+        offsets.append(match.end())
+    return offsets
+
+
+def _line_for_offset(line_offsets: list[int], char_offset: int) -> int:
+    """Return the 1-based source line containing a character offset."""
+    # Binary search would be faster; linear is fine at document scale.
+    line = 1
+    for i, start in enumerate(line_offsets, start=1):
+        if start > char_offset:
+            break
+        line = i
+    return line
+
+
+def _page_for_offset(text: str, char_offset: int):
+    """
+    Return the 1-based page a character offset falls on, or None.
+
+    Counts page markers up to the offset. A document with no markers — any
+    non-paged format — always returns None.
+    """
+    page = None
+    for match in _PAGE_MARKER.finditer(text):
+        if match.start() > char_offset:
+            break
+        page = int(match.group(1))
+    return page
+
+
+def _locate_chunk(text: str, chunk: str, line_offsets: list[int],
+                  search_from: int) -> dict:
+    """
+    Resolve a chunk's page and starting line within the source text.
+
+    Args:
+        text: The full source text.
+        chunk: The chunk to locate.
+        line_offsets: Precomputed line-start offsets for the source.
+        search_from: Character offset to start the search — advances per chunk
+            so repeated text resolves to the correct later occurrence.
+
+    Returns:
+        A dict with page, line_start, and the next search offset.
+    """
+    idx = text.find(chunk[:80], search_from)  # match on the chunk head
+    if idx == -1:
+        idx = search_from  # fallback: chunk head not found verbatim
+
+    return {
+        "page": _page_for_offset(text, idx),
+        "line_start": _line_for_offset(line_offsets, idx),
+        "next_offset": idx + 1,
+    }
+
+
+
 _METADATA_DEFAULTS = {
     "department": "unassigned",
     "year": None,
@@ -193,29 +266,40 @@ def store_document(
     vectors = embed_chunks(chunks)
     meta = _build_metadata(metadata)
 
-    points = [
-        PointStruct(
-            id=str(uuid.uuid4()),
-            vector=vec,
-            payload={
-                "doc_id": doc_id,
-                "filename": filename,
-                "chunk_index": idx,
-                "text": chunk,
-                "department": meta["department"],
-                "year": meta["year"],
-                "author": meta["author"],
-                "language": meta["language"],
-                "tags": meta["tags"],
-                "access_level": meta["access_level"],
-                "file_type": meta["file_type"],
-            },
-        )
-        for idx, (chunk, vec) in enumerate(zip(chunks, vectors))
-    ]
+    line_offsets = _build_line_index(text)
 
-    qdrant.upsert(
-        collection_name=COLLECTION,
-        points=points,
-    )
+    search_from = 0
+    points = []
+    for index, (chunk, vector) in enumerate(zip(chunks, vectors)):
+        located = _locate_chunk(text, chunk, line_offsets, search_from)
+        search_from = located["next_offset"]
+
+        paragraph_index = text.count("\n\n", 0, search_from)
+
+        points.append(
+            PointStruct(
+                        id=str(uuid.uuid4()),
+                        vector=vector,
+                        payload = {
+                            # --- Citation fields ---
+                            "doc_id": doc_id,
+                            "filename": filename,
+                            "page": located["page"],
+                            "paragraph_index": paragraph_index,
+                            "chunk_index": index,
+                            "line_start": located["line_start"],
+                            "text": chunk,
+                            # --- Fix #4 metadata ---
+                            "department": meta["department"],
+                            "year": meta["year"],
+                            "author": meta["author"],
+                            "language": meta["language"],
+                            "tags": meta["tags"],
+                            "access_level": meta["access_level"],
+                            "file_type": meta["file_type"],
+                        },
+                    )
+        )
+
+    qdrant.upsert(collection_name=COLLECTION, points=points)
     return len(points)

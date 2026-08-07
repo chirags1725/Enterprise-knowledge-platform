@@ -30,7 +30,28 @@ GRAPH_WEIGHT = 2.0
 
 
 _KEYWORD_FILTERS = ("department", "author", "language", "access_level", "file_type")
+_SNIPPET_LEN = 2400
 
+# Citation builder
+
+def _snippet(text: str, length: int = _SNIPPET_LEN) -> str:
+    """Return a trimmed preview of the chunk for display in a citation."""
+    text = text.strip()
+    if len(text) <= length:
+        return text
+    return text[:length].rsplit(" ", 1)[0] + "…"
+
+def _to_citation(payload: dict, score: float) -> dict:
+    return {
+        "doc_id": payload.get("doc_id"),
+        "filename": payload.get("filename", "unknown"),
+        "page": payload.get("page"),                          # None for non-paged formats
+        "paragraph_index": payload.get("paragraph_index"),
+        "chunk_index": payload.get("chunk_index"),
+        "line_start": payload.get("line_start"),
+        "score": round(float(score), 4),
+        "snippet": (payload.get("text", "")),
+    }
 
 def encode_query(query: str) -> list[float]:
     key = cache.embedding_key(query)
@@ -106,13 +127,17 @@ def vector_search(query, limit=20, filters=None):
     vec = encode_query(query)
     hits = qdrant.query_points(COLLECTION, query=vec, limit=limit, query_filter=build_filter(filters)).points
     return [
-    {
-        "text": h.payload["text"],
-        "doc_id": h.payload["doc_id"],
-        "chunk_index": h.payload.get("chunk_index"),
-        "vector_score": h.score,
-    }
-    for h in hits if h.payload and "text" in h.payload and "doc_id" in h.payload
+        {
+            "text": h.payload["text"],
+            "doc_id": h.payload["doc_id"],
+            "chunk_index": h.payload.get("chunk_index"),
+            "vector_score": h.score,
+            "payload": h.payload,
+        }
+        for h in hits
+        if h.payload 
+        and "text" in h.payload 
+        and "doc_id" in h.payload
     ]
 
 def rerank_pairs(query: str, chunks: list[dict]) -> list[float]:
@@ -188,6 +213,7 @@ def bm25_search(query, limit=30, filters=None):
             "doc_id": source["doc_id"],
             "chunk_index": source.get("chunk_index"),
             "bm25_score": hit["_score"],
+            "payload": source,
         })
     
     return results
@@ -311,6 +337,7 @@ def _best_chunk_for_doc(doc_id, filters=None):
         "text": payload["text"],
         "doc_id": payload["doc_id"],
         "chunk_index": payload.get("chunk_index",0),
+        "payload": payload,
     }
 
 
@@ -399,6 +426,7 @@ def reciprocal_rank_fusion(vector_hits, bm25_hits, graph_hits=None, k=RRF_K):
                     "text": hit["text"],
                     "doc_id": hit["doc_id"],
                     "chunk_index": hit.get("chunk_index"),
+                    "payload": hit.get("payload", {}),
                     "vector_score": 0.0,
                     "bm25_score": 0.0,
                     "graph_score": 0.0,
@@ -464,13 +492,26 @@ def hybrid_search(query, top_k=5, rerank_pool=50, filters=None, use_graph=True):
 
     pool = candidates[:rerank_pool]
 
-    scores = rerank_pairs(query, pool)
+    rerank_scores = rerank_pairs(query, pool)
 
-    for c, r in zip(pool, scores):
-        c["rerank_score"] = r
+    results = []
+    for candidate, raw_score in zip(pool, rerank_scores):
+        score = float(raw_score)
+        citation = _to_citation(candidate["payload"], score)
+        results.append(
+            {
+                "citation": citation,
+                # Carry through all three signals for debugging / logging.
+                "vector_score": candidate["vector_score"],
+                "bm25_score": candidate["bm25_score"],
+                "rrf_score": candidate["rrf_score"],
+                "rerank_score": score,
+            }
+        )
 
-    ranked = sorted(pool, key=lambda c: c["rerank_score"], reverse=True)
-    return ranked[:top_k]
+    results.sort(key=lambda r: r["rerank_score"], reverse=True)
+    return results[:top_k]
+
 
 
 def cached_hybrid_search(
@@ -501,3 +542,43 @@ def cached_hybrid_search(
     )
 
     return results
+
+
+def build_qa_context(results: list[dict]) -> tuple[str, list[dict]]:
+    """
+    Format hybrid search results into a numbered context block for Mistral.
+
+    Each source gets a [n] reference number that Mistral can include in its
+    answer. The matching citation objects are returned alongside the context
+    string so qa.py can attach them to the response.
+
+    Args:
+        results: Output of hybrid_search.
+
+    Returns:
+        A tuple of (context_str, citations_list).
+        context_str: The prompt context block passed to Mistral.
+        citations_list: The citation objects in [n] order, for the response.
+    """
+    context_lines = []
+    citations = []
+
+    for n, result in enumerate(results, start=1):
+        cit = result["citation"]
+        citations.append(cit)
+
+        # Build a human-readable location label for the context block.
+        location_parts = [cit["filename"]]
+        if cit["page"] is not None:
+            location_parts.append(f"p.{cit['page']}")
+        if cit["paragraph_index"] is not None:
+            location_parts.append(f"¶{cit['paragraph_index']}")
+        if cit["line_start"] is not None:
+            location_parts.append(f"L.{cit['line_start']}")
+        location_parts.append(f"score={cit['score']:.2f}")
+
+        location = " · ".join(location_parts)
+        context_lines.append(f"[{n}] {location}\n{cit['snippet']}")
+
+    context_str = "\n\n".join(context_lines)
+    return context_str, citations

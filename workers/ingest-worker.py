@@ -80,7 +80,8 @@ def process_job(job: dict):
         print('Working on: ',doc_id)
         update_state(doc_id, IngestionState.EXTRACTING)
         text = route_extract(path, filename)
-
+        print(repr(text[:200]))
+        
         update_state(doc_id,IngestionState.EMBEDDING)
         store_document(doc_id,text,filename,metadata=metadata,source_ext=source_ext)
 

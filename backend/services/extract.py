@@ -22,8 +22,15 @@ def get_whisper():
 
 def extract_pdf(path):
     reader = PdfReader(path)
-    return "\n".join(p.extract_text() or "" for p in reader.pages)
+    pages = []
+    for page_number, page in enumerate(reader.pages, start=1):
+        text = page.extract_text() or ""
 
+        pages.append(
+            f"\n\x0cPAGE:{page_number}\x0c\n{text}"
+        )
+
+    return "\n".join(pages)
 
 def extract_image(path):
     import pytesseract
